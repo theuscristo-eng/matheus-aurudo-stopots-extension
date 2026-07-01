@@ -14,6 +14,8 @@
   const ANSWER_SELECTOR = "input[type='text'], input:not([type]), textarea";
   const BRIDGE_SOURCE = "stopots-helper-bridge";
   const PANEL_POSITION_KEY = "matheusAurudoPanelPosition";
+  const LEARNED_ANSWERS_KEY = "matheusAurudoLearnedAnswers";
+  const FALLBACK_ENDPOINT_KEY = "matheusAurudoFallbackEndpoint";
   const state = {
     letter: "",
     letterSource: "jogo",
@@ -221,6 +223,134 @@
     return source.filter((item) => normalize(item).startsWith(cleanLetter)).slice(0, 12);
   }
 
+  function cleanAnswer(value) {
+    return normalize(value).replace(/\s+-\s+/g, " ").trim();
+  }
+
+  function readLearnedAnswers() {
+    try {
+      const value = JSON.parse(localStorage.getItem(LEARNED_ANSWERS_KEY) || "{}");
+      return value && typeof value === "object" ? value : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function writeLearnedAnswers(value) {
+    try {
+      localStorage.setItem(LEARNED_ANSWERS_KEY, JSON.stringify(value));
+    } catch (_) {
+      // Ignore storage quota/privacy mode issues.
+    }
+  }
+
+  function isValidAnswerForLetter(value, letter) {
+    const answer = cleanAnswer(value);
+    const cleanLetter = normalize(letter).charAt(0);
+    return answer.length >= 2 && cleanLetter && answer.startsWith(cleanLetter);
+  }
+
+  function rememberAnswer(categoryKey, letter, value) {
+    const answer = cleanAnswer(value);
+    const cleanLetter = normalize(letter).charAt(0);
+    if (!categoryKey || !isValidAnswerForLetter(answer, cleanLetter)) return false;
+
+    const learned = readLearnedAnswers();
+    learned[categoryKey] ||= {};
+    learned[categoryKey][cleanLetter] ||= [];
+
+    const list = learned[categoryKey][cleanLetter];
+    if (list.includes(answer)) return false;
+
+    list.unshift(answer);
+    learned[categoryKey][cleanLetter] = list.slice(0, 40);
+    writeLearnedAnswers(learned);
+    return true;
+  }
+
+  function getLearnedSuggestions(categoryKey, letter) {
+    const cleanLetter = normalize(letter).charAt(0);
+    const learned = readLearnedAnswers();
+    const list = learned?.[categoryKey]?.[cleanLetter];
+    return Array.isArray(list) ? list.slice(0, 12) : [];
+  }
+
+  function learnFromCurrentInputs() {
+    if (!state.letter || !state.categories.length) return 0;
+
+    let learned = 0;
+    for (const category of state.categories) {
+      const value = category.input?.value;
+      if (value && rememberAnswer(category.key, state.letter, value)) learned += 1;
+    }
+
+    return learned;
+  }
+
+  function readFallbackEndpoint() {
+    try {
+      const endpoint = String(localStorage.getItem(FALLBACK_ENDPOINT_KEY) || "").trim();
+      if (!endpoint) return "";
+      const url = new URL(endpoint);
+      if (!["localhost", "127.0.0.1"].includes(url.hostname)) return "";
+      return url.toString();
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function askBackgroundForFallback(endpoint, category, letter) {
+    return new Promise((resolve) => {
+      if (typeof chrome === "undefined" || !chrome.runtime?.sendMessage) {
+        resolve("");
+        return;
+      }
+
+      chrome.runtime.sendMessage(
+        {
+          type: "MATHEUS_AURUDO_FETCH_FALLBACK",
+          endpoint,
+          category: category.key,
+          label: category.label,
+          letter
+        },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            resolve("");
+            return;
+          }
+
+          const answers = Array.isArray(response?.answers)
+            ? response.answers
+            : response?.answer
+              ? [response.answer]
+              : [];
+          const answer = answers.find((item) => isValidAnswerForLetter(item, letter));
+          resolve(answer ? cleanAnswer(answer) : "");
+        }
+      );
+    });
+  }
+
+  async function getAnswerForCategory(category, letter) {
+    const local = getSuggestions(category.key, letter)[0];
+    if (local) return { answer: local, source: "banco" };
+
+    const learned = getLearnedSuggestions(category.key, letter)[0];
+    if (learned) return { answer: learned, source: "aprendido" };
+
+    const endpoint = readFallbackEndpoint();
+    if (!endpoint) return { answer: "", source: "" };
+
+    const online = await askBackgroundForFallback(endpoint, category, letter);
+    if (online) {
+      rememberAnswer(category.key, letter, online);
+      return { answer: online, source: "api" };
+    }
+
+    return { answer: "", source: "" };
+  }
+
   function setFieldValue(field, value) {
     const prototype = field instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
     const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
@@ -248,8 +378,9 @@
     field.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, key: formatted.slice(-1) || " " }));
   }
 
-  function injectAllAnswers() {
+  async function injectAllAnswers() {
     refresh();
+    learnFromCurrentInputs();
 
     if (!state.letter) {
       state.lastInjection = "Nao injetei: ainda nao detectei a letra.";
@@ -265,9 +396,11 @@
 
     let injected = 0;
     let missing = 0;
+    const sources = { aprendido: 0, banco: 0, api: 0 };
 
     for (const category of state.categories) {
-      const answer = getSuggestions(category.key, state.letter)[0];
+      const result = await getAnswerForCategory(category, state.letter);
+      const answer = result.answer;
 
       if (!answer || !category.input) {
         missing += 1;
@@ -275,11 +408,17 @@
       }
 
       setFieldValue(category.input, answer);
+      rememberAnswer(category.key, state.letter, answer);
+      if (result.source && sources[result.source] !== undefined) sources[result.source] += 1;
       injected += 1;
     }
 
+    const sourceText = Object.entries(sources)
+      .filter(([, count]) => count)
+      .map(([source, count]) => `${source}: ${count}`)
+      .join(", ");
     state.lastInjection = injected
-      ? `Injetado: ${injected}. Sem resposta/campo: ${missing}.`
+      ? `Injetado: ${injected}. ${sourceText ? `${sourceText}. ` : ""}Sem resposta/campo: ${missing}.`
       : "Nao encontrei respostas locais para essa rodada.";
     render();
   }
@@ -570,7 +709,9 @@
       panel.querySelector(".sh-collapse").textContent = state.collapsed ? "+" : "-";
     });
 
-    panel.querySelector(".sh-inject").addEventListener("click", injectAllAnswers);
+    panel.querySelector(".sh-inject").addEventListener("click", () => {
+      injectAllAnswers();
+    });
     return panel;
   }
 
@@ -639,8 +780,9 @@
   if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message?.type === "MATHEUS_AURUDO_INJECT_ALL") {
-        injectAllAnswers();
-        sendResponse({ message: state.lastInjection || "Comando executado." });
+        injectAllAnswers().then(() => {
+          sendResponse({ message: state.lastInjection || "Comando executado." });
+        });
         return true;
       }
 
@@ -659,6 +801,19 @@
   onDomReady(() => {
     createPanel();
     refresh();
+    document.addEventListener(
+      "input",
+      (event) => {
+        if (!(event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement)) return;
+        if (event.target.closest("#stopots-helper")) return;
+        window.setTimeout(() => {
+          refresh();
+          learnFromCurrentInputs();
+          render();
+        }, 0);
+      },
+      true
+    );
     new MutationObserver((mutations) => {
       const hasPageMutation = mutations.some((mutation) => {
         const target = mutation.target;

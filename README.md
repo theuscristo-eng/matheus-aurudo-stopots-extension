@@ -9,6 +9,8 @@ Extensao do Chrome para uso pessoal no StopotS. Ela abre um painel fixo dentro d
 - Tema visual hacker com fundo personalizado.
 - Botao `INJETAR TUDO` para preencher os campos reconhecidos.
 - Banco local com milhares de respostas separadas por categoria.
+- Aprendizado local: respostas digitadas manualmente podem ser lembradas para proximas rodadas.
+- Fallback opcional por API local quando o banco nao tiver resposta.
 - Sem backend, sem cadastro e sem chamadas externas.
 
 ## Como instalar no Chrome
@@ -29,6 +31,38 @@ Se voce atualizar os arquivos depois, volte em `chrome://extensions/` e clique e
 3. Arraste o painel para onde quiser.
 4. Clique em `INJETAR TUDO`.
 
+## Aprendizado local
+
+A extensao salva no proprio navegador respostas validas que voce digitar manualmente.
+
+Exemplo: se a letra for `M`, a categoria for `Animal` e voce digitar `Macaco`, a extensao pode lembrar essa resposta em proximas rodadas.
+
+Essas respostas ficam no `localStorage` do navegador, usando a chave `matheusAurudoLearnedAnswers`.
+
+## Fallback por API local
+
+O banco local continua sendo a fonte principal. Se nao houver resposta, a extensao pode consultar uma API local opcional.
+
+Para ativar, abra o console do navegador no StopotS e defina:
+
+```js
+localStorage.setItem("matheusAurudoFallbackEndpoint", "http://localhost:8787/answer");
+```
+
+A API deve responder JSON neste formato:
+
+```json
+{ "answer": "exemplo" }
+```
+
+Ou:
+
+```json
+{ "answers": ["exemplo", "extra"] }
+```
+
+A extensao so aceita fallback local em `localhost` ou `127.0.0.1`, para evitar expor chaves ou depender de servicos externos dentro do GitHub publico.
+
 ## Arquivos principais
 
 - `manifest.json`: configuracao da extensao.
@@ -41,5 +75,6 @@ Se voce atualizar os arquivos depois, volte em `chrome://extensions/` e clique e
 ## Observacoes
 
 - A extensao depende do layout e dos sinais atuais do StopotS. Se o site mudar, pode ser necessario ajustar a deteccao.
-- As respostas sao locais e podem ser editadas em `data.js`.
+- As respostas principais sao locais e podem ser editadas em `data.js`.
+- O fallback por API local e opcional e fica desativado ate voce configurar `matheusAurudoFallbackEndpoint`.
 - Este projeto e fornecido como esta, para estudo e uso pessoal.

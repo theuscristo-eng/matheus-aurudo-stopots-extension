@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Matheus Aurudo",
   "description": "Injetor pessoal de respostas por letra e categoria para StopotS.",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "action": {
     "default_title": "Matheus Aurudo"
   },
@@ -49,7 +49,9 @@
     "https://stopots.com/*",
     "https://*.stopots.com/*",
     "https://stopots.com.br/*",
-    "https://*.stopots.com.br/*"
+    "https://*.stopots.com.br/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
   ],
   "web_accessible_resources": [
     {

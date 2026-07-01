@@ -1,5 +1,6 @@
 const STOPOTS_URL_RE = /^https:\/\/([^/]+\.)?stopots\.com(\.br)?\//i;
 const SHOW_PANEL_MESSAGE = { type: "MATHEUS_AURUDO_SHOW_PANEL" };
+const ALLOWED_FALLBACK_HOSTS = new Set(["localhost", "127.0.0.1"]);
 
 function sendTabMessage(tabId, message) {
   return new Promise((resolve) => {
@@ -49,4 +50,52 @@ async function showPanel(tab) {
 
 chrome.action.onClicked.addListener((tab) => {
   showPanel(tab);
+});
+
+function isAllowedFallbackUrl(value) {
+  try {
+    const url = new URL(value);
+    return ["http:", "https:"].includes(url.protocol) && ALLOWED_FALLBACK_HOSTS.has(url.hostname);
+  } catch (_) {
+    return false;
+  }
+}
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type !== "MATHEUS_AURUDO_FETCH_FALLBACK") return false;
+
+  (async () => {
+    if (!isAllowedFallbackUrl(message.endpoint)) {
+      sendResponse({ answers: [] });
+      return;
+    }
+
+    const url = new URL(message.endpoint);
+    url.searchParams.set("category", String(message.category || ""));
+    url.searchParams.set("label", String(message.label || ""));
+    url.searchParams.set("letter", String(message.letter || ""));
+
+    try {
+      const response = await fetch(url.toString(), {
+        headers: { accept: "application/json" },
+        cache: "no-store"
+      });
+      if (!response.ok) {
+        sendResponse({ answers: [] });
+        return;
+      }
+
+      const data = await response.json();
+      const answers = Array.isArray(data.answers)
+        ? data.answers
+        : data.answer
+          ? [data.answer]
+          : [];
+      sendResponse({ answers: answers.map((item) => String(item || "")).filter(Boolean).slice(0, 5) });
+    } catch (_) {
+      sendResponse({ answers: [] });
+    }
+  })();
+
+  return true;
 });
