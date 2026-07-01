@@ -1,0 +1,67 @@
+{
+  "manifest_version": 3,
+  "name": "Matheus Aurudo",
+  "description": "Injetor pessoal de respostas por letra e categoria para StopotS.",
+  "version": "0.4.0",
+  "action": {
+    "default_title": "Matheus Aurudo"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://stopots.com/*",
+        "https://*.stopots.com/*",
+        "https://stopots.com.br/*",
+        "https://*.stopots.com.br/*"
+      ],
+      "js": [
+        "page-bridge.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://stopots.com/*",
+        "https://*.stopots.com/*",
+        "https://stopots.com.br/*",
+        "https://*.stopots.com.br/*"
+      ],
+      "js": [
+        "data.js",
+        "content.js"
+      ],
+      "css": [
+        "styles.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "permissions": [
+    "activeTab",
+    "clipboardWrite",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://stopots.com/*",
+    "https://*.stopots.com/*",
+    "https://stopots.com.br/*",
+    "https://*.stopots.com.br/*"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "assets/hacker-bg.png"
+      ],
+      "matches": [
+        "https://stopots.com/*",
+        "https://*.stopots.com/*",
+        "https://stopots.com.br/*",
+        "https://*.stopots.com.br/*"
+      ]
+    }
+  ]
+}
